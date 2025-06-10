@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh"> <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JumpTiger 代理监控</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="[https://cdn.jsdelivr.net/npm/chart.js](https://cdn.jsdelivr.net/npm/chart.js)"></script>
+    <script src="[https://code.jquery.com/jquery-3.6.0.min.js](https://code.jquery.com/jquery-3.6.0.min.js)"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>JumpTiger 代理监控面板</h1>
+
+        <div class="summary-cards">
+            <div class="card">
+                <h3>活跃连接数</h3>
+                <p id="active-connections-count">0</p>
+            </div>
+            <div class="card">
+                <h3>总上传流量 (字节)</h3>
+                <p id="total-upload-bytes">0</p>
+            </div>
+            <div class="card">
+                <h3>总下载流量 (字节)</h3>
+                <p id="total-download-bytes">0</p>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="connectionsChart"></canvas>
+            <canvas id="trafficChart"></canvas>
+        </div>
+
+        <div class="latest-connections">
+            <h2>最新连接记录</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>时间戳</th>
+                        <th>客户端 IP</th>
+                        <th>目标地址</th>
+                        <th>持续时间 (秒)</th>
+                        <th>上传 (字节)</th>
+                        <th>下载 (字节)</th>
+                    </tr>
+                </thead>
+                <tbody id="connections-table-body">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let connectionsChart; // 用于连接数图表的 Chart.js 实例
+        let trafficChart;     // 用于流量图表的 Chart.js 实例
+
+        // 辅助函数：格式化字节数为可读单位 (Bytes, KB, MB, GB, TB)
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024; // 1KB = 1024 Bytes
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 从后端 API 获取数据并更新页面
+        function fetchData() {
+            $.getJSON('/api/connections', function(data) {
+                // 更新概览卡片数据
+                $('#active-connections-count').text(data.active_connections);
+                $('#total-upload-bytes').text(formatBytes(data.total_upload_bytes));
+                $('#total-download-bytes').text(formatBytes(data.total_download_bytes));
+
+                // 更新最新连接记录表格
+                const tableBody = $('#connections-table-body');
+                tableBody.empty(); // 清空之前的表格内容
+                // 显示最新的 10 条连接记录 (倒序排列，最新的在上面)
+                data.connections.slice(-10).reverse().forEach(conn => {
+                    const row = `<tr>
+                        <td>${conn.timestamp}</td>
+                        <td>${conn.client_address ? conn.client_address[0] : 'N/A'}</td>
+                        <td>${conn.target_address || 'N/A'}</td>
+                        <td>${conn.duration_seconds !== undefined ? conn.duration_seconds.toFixed(2) : 'N/A'}</td>
+                        <td>${conn.bytes_received_from_client !== undefined ? formatBytes(conn.bytes_received_from_client) : 'N/A'}</td>
+                        <td>${conn.bytes_sent_to_client !== undefined ? formatBytes(conn.bytes_sent_to_client) : 'N/A'}</td>
+                    </tr>`;
+                    tableBody.append(row); // 将行添加到表格中
+                });
+
+                // 更新图表数据
+                updateCharts(data.chart_data);
+            });
+        }
+
+        // 更新 Chart.js 图表
+        function updateCharts(chart_data) {
+            const labels = chart_data.labels; // 时间标签
+            const activeConnectionsData = chart_data.active_connections; // 连接数数据
+            const trafficData = chart_data.traffic; // 流量数据
+
+            // 更新连接数图表
+            if (connectionsChart) {
+                connectionsChart.data.labels = labels;
+                connectionsChart.data.datasets[0].data = activeConnectionsData;
+                connectionsChart.update(); // 更新现有图表
+            } else {
+                const ctxConnections = document.getElementById('connectionsChart').getContext('2d');
+                connectionsChart = new Chart(ctxConnections, {
+                    type: 'line', // 折线图
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '每分钟连接数',
+                            data: activeConnectionsData,
+                            borderColor: 'rgb(75, 192, 192)',
+                            tension: 0.1, // 曲线张力
+                            fill: false // 不填充曲线下方区域
+                        }]
+                    },
+                    options: {
+                        responsive: true, // 响应式布局
+                        maintainAspectRatio: false, // 不保持宽高比，可以自由调整大小
+                        scales: {
+                            y: { beginAtZero: true } // Y 轴从 0 开始
+                        }
+                    }
+                });
+            }
+
+            // 更新流量图表
+            if (trafficChart) {
+                trafficChart.data.labels = labels;
+                trafficChart.data.datasets[0].data = trafficData;
+                trafficChart.update(); // 更新现有图表
+            } else {
+                const ctxTraffic = document.getElementById('trafficChart').getContext('2d');
+                trafficChart = new Chart(ctxTraffic, {
+                    type: 'line', // 折线图
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '每分钟总流量 (字节)',
+                            data: trafficData,
+                            borderColor: 'rgb(255, 99, 132)',
+                            tension: 0.1,
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+            }
+        }
+
+        // 当文档准备就绪时执行
+        $(document).ready(function() {
+            fetchData(); // 页面加载时立即获取数据
+            setInterval(fetchData, 5000); // 每 5 秒钟刷新一次数据
+        });
+    </script>
+</body>
+</html>

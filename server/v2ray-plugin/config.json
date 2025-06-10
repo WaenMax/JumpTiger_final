@@ -1,0 +1,9 @@
+
+{
+    "mode": "server",
+    "listen": "127.0.0.1:10000",
+    "remote": "127.0.0.1:8000",
+    "obfs": "websocket",
+    "path": "/ws",
+    "tls": true
+}

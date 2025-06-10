@@ -1,0 +1,123 @@
+/* 设置页面基础样式 */
+body {
+    font-family: Arial, sans-serif; /* 字体 */
+    margin: 0; /* 外边距 */
+    padding: 20px; /* 内边距 */
+    background-color: #f4f7f6; /* 背景色 */
+    color: #333; /* 文字颜色 */
+}
+
+/* 容器样式，用于居中和美化内容区域 */
+.container {
+    max-width: 1200px; /* 最大宽度 */
+    margin: 0 auto; /* 居中 */
+    background-color: #fff; /* 背景色 */
+    padding: 30px; /* 内边距 */
+    border-radius: 8px; /* 圆角 */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); /* 阴影效果 */
+}
+
+/* 标题样式 */
+h1, h2, h3 {
+    color: #0056b3; /* 标题颜色 */
+    text-align: center; /* 居中对齐 */
+    margin-bottom: 20px; /* 底部外边距 */
+}
+
+/* 概览卡片区域的容器样式 */
+.summary-cards {
+    display: flex; /* 弹性布局 */
+    justify-content: space-around; /* 均匀分布 */
+    gap: 20px; /* 卡片之间的间距 */
+    margin-bottom: 30px; /* 底部外边距 */
+    flex-wrap: wrap; /* 允许卡片换行 */
+}
+
+/* 单个概览卡片的样式 */
+.card {
+    background-color: #e0f2f7; /* 背景色 */
+    padding: 20px; /* 内边距 */
+    border-radius: 8px; /* 圆角 */
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.05); /* 阴影效果 */
+    text-align: center; /* 文字居中 */
+    flex: 1; /* 弹性项目等分空间 */
+    min-width: 250px; /* 最小宽度，防止过小挤压 */
+}
+
+/* 卡片内标题样式 */
+.card h3 {
+    margin-top: 0; /* 顶部外边距 */
+    color: #007bff; /* 颜色 */
+    font-size: 1.2em; /* 字体大小 */
+}
+
+/* 卡片内数字样式 */
+.card p {
+    font-size: 2em; /* 字体大小 */
+    font-weight: bold; /* 加粗 */
+    color: #333; /* 文字颜色 */
+    margin: 10px 0 0; /* 外边距 */
+}
+
+/* 图表区域的容器样式 */
+.chart-container {
+    display: flex; /* 弹性布局 */
+    justify-content: space-around; /* 均匀分布 */
+    gap: 20px; /* 图表之间的间距 */
+    margin-bottom: 30px; /* 底部外边距 */
+    flex-wrap: wrap; /* 允许图表换行 */
+    height: 400px; /* 固定高度，确保图表显示完整 */
+}
+
+/* 单个 Canvas 图表的样式 */
+.chart-container canvas {
+    flex: 1; /* 弹性项目等分空间 */
+    min-width: 45%; /* 最小宽度，确保图表合理显示 */
+    max-width: 100%; /* 最大宽度 */
+}
+
+/* 最新连接记录区域的样式 */
+.latest-connections {
+    margin-top: 40px; /* 顶部外边距 */
+}
+
+/* 最新连接记录标题样式 */
+.latest-connections h2 {
+    text-align: left; /* 左对齐 */
+    border-bottom: 2px solid #eee; /* 底部边框 */
+    padding-bottom: 10px; /* 底部内边距 */
+}
+
+/* 表格样式 */
+table {
+    width: 100%; /* 宽度占满父容器 */
+    border-collapse: collapse; /* 边框合并 */
+    margin-top: 20px; /* 顶部外边距 */
+    background-color: #fff; /* 背景色 */
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.05); /* 阴影效果 */
+    border-radius: 8px; /* 圆角 */
+    overflow: hidden; /* 隐藏超出圆角的部分 */
+}
+
+/* 表格头部样式 */
+table thead {
+    background-color: #007bff; /* 背景色 */
+    color: #fff; /* 文字颜色 */
+}
+
+/* 表格表头和单元格样式 */
+table th, table td {
+    padding: 12px 15px; /* 内边距 */
+    text-align: left; /* 左对齐 */
+    border-bottom: 1px solid #ddd; /* 底部边框 */
+}
+
+/* 表格偶数行背景色 */
+table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+/* 表格行悬停效果 */
+table tbody tr:hover {
+    background-color: #f1f1f1;
+}

@@ -1,0 +1,7 @@
+{
+    "host": "127.0.0.1",
+    "port": 8000,
+    "password": "your_strong_password",
+    "method": "aes-256-cfb",
+    "log_file": "../../web_monitor/data/ss_connections.log"
+}

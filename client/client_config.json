@@ -1,0 +1,8 @@
+{
+    "local_host": "127.0.0.1",
+    "local_port": 1080,
+    "remote_host": "your_domain.com",
+    "remote_port": 443,
+    "password": "your_strong_password",
+    "method": "aes-256-cfb"
+}
