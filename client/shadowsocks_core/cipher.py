@@ -1,115 +1,87 @@
+# client/shadowsocks_core/cipher.py (与服务器端的 cipher.py 完全相同)
+import os
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
-import os
+from cryptography.hazmat.primitives import hashes, hmac, padding
+from cryptography.hazmat.primitives.kdf.hkdf import HKDFExpand
 
-class CipherHandler:
-    """
-    负责 Shadowsocks 协议的加密和解密。
-    支持 AES-256-CFB 和 ChaCha20 算法。
-    """
-    def __init__(self, password: str, method: str):
-        self.password = password.encode('utf-8') # 将密码转换为字节
-        self.method = method.lower() # 将加密方法转换为小写
-        self.key = self._derive_key() # 从密码派生出密钥
-        self.cipher_context = None # 用于存储当前加密器/解密器的状态，适用于流式加密
 
-        # 验证加密方法并设置 IV (Initialization Vector) 长度
-        if self.method == 'aes-256-cfb':
-            self.iv_len = 16 # AES 的 IV 长度通常是其块大小 (16 字节)
-        elif self.method == 'chacha20':
-            self.iv_len = 8  # ChaCha20 的 Nonce (IV) 大小 (8 字节)
+class CryptoError(Exception):
+    pass
+
+
+class CipherWrapper:
+    def __init__(self, method, password):
+        self.method = method
+        self.password = password.encode('utf-8')
+        self.key = self._derive_key()
+
+        if self.method == 'aes-256-gcm':
+            self.algorithm = algorithms.AES(self.key)
+            self.iv_len = 16  # AES GCM 的 IV 长度
+            self.tag_len = 16  # GCM 的认证标签长度
+        elif self.method == 'chacha20-poly1305':
+            # ChaCha20 需要一个随机数 nonce
+            self.algorithm = algorithms.ChaCha20(self.key, nonce=os.urandom(12))
+            self.iv_len = 12  # ChaCha20-Poly1305 的 nonce 长度
+            self.tag_len = 16  # Poly1305 的认证标签长度
         else:
-            raise ValueError(f"不支持的加密方法：{method}")
+            raise ValueError(f"不支持的加密方法: {method}")
 
-        # 初始化流式加密器/解密器 (初始时无状态)
-        self._encryptor = None
-        self._decryptor = None
-        self._current_iv = None # 存储当前连接使用的 IV
+    def _derive_key(self):
+        # 这是一个简单的密钥派生方式（不是最强的 KDF，仅为演示）
+        # 实际的 Shadowsocks 实现通常会基于密码的哈希值来派生密钥
+        hasher = hashes.Hash(hashes.SHA256(), backend=default_backend())
+        hasher.update(self.password)
+        return hasher.finalize()[:32]  # 使用 32 字节 (256 位) 作为密钥
 
-    def _derive_key(self) -> bytes:
-        """
-        从密码派生出密钥。
-        这里使用简单的 SHA256 哈希。
-        在实际应用中，为了更强的安全性，应使用 PBKDF2 或 scrypt 等更强大的密钥派生函数。
-        """
-        digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
-        digest.update(self.password)
-        key = digest.finalize()
+    def encrypt(self, plaintext):
+        if self.method == 'aes-256-gcm':
+            iv = os.urandom(self.iv_len)
+            encryptor = Cipher(self.algorithm, modes.GCM(iv), backend=default_backend()).encryptor()
+            # AEAD 密码模式要求我们处理填充（padding）
+            padder = padding.PKCS7(algorithms.AES.block_size).padder()
+            padded_data = padder.update(plaintext) + padder.finalize()
 
-        # Shadowsocks 通常使用派生密钥的前 N 个字节。
-        # 对于 AES-256-CFB 和 ChaCha20，密钥长度都是 32 字节 (256 位)。
-        if self.method == 'aes-256-cfb' or self.method == 'chacha20':
-            return key[:32] # 使用前 32 字节作为 256 位密钥
+            ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+            return iv + ciphertext + encryptor.tag
+        elif self.method == 'chacha20-poly1305':
+            # ChaCha20-Poly1305 内部包含了认证标签
+            # 为了简化，我们这里只处理 ChaCha20 部分
+            nonce = os.urandom(self.iv_len)
+            cipher = Cipher(algorithms.ChaCha20(self.key, nonce), mode=None, backend=default_backend())
+            encryptor = cipher.encryptor()
+            ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+            dummy_tag = b'\x00' * self.tag_len  # 占位符
+            return nonce + ciphertext + dummy_tag
         else:
-            raise ValueError(f"此密钥派生方法不支持加密方法：{self.method}")
+            raise CryptoError("不支持该加密方法进行加密操作。")
 
-    def get_iv_len(self) -> int:
-        """返回所选加密方法预期的 IV 长度。"""
-        return self.iv_len
+    def decrypt(self, ciphertext):
+        if self.method == 'aes-256-gcm':
+            if len(ciphertext) < self.iv_len + self.tag_len:
+                raise CryptoError("AES-256-GCM 解密时密文太短。")
+            iv = ciphertext[:self.iv_len]
+            tag = ciphertext[-self.tag_len:]
+            encrypted_data = ciphertext[self.iv_len:-self.tag_len]
 
-    def set_iv(self, iv: bytes):
-        """
-        设置 IV 并初始化流式加密操作的加密器/解密器。
-        对于每个新的 Shadowsocks 连接，都需要调用此方法来设置新的 IV。
-        """
-        if len(iv) != self.iv_len:
-            raise ValueError(f"IV 长度不匹配。预期 {self.iv_len} 字节，实际得到 {len(iv)} 字节。")
-        self._current_iv = iv
+            decryptor = Cipher(self.algorithm, modes.GCM(iv, tag), backend=default_backend()).decryptor()
+            try:
+                padded_plaintext = decryptor.update(encrypted_data) + decryptor.finalize()
+                unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+                plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
+                return plaintext
+            except Exception as e:
+                raise CryptoError(f"AES-256-GCM 解密或标签验证失败: {e}")
+        elif self.method == 'chacha20-poly1305':
+            if len(ciphertext) < self.iv_len + self.tag_len:
+                raise CryptoError("ChaCha20-Poly1305 解密时密文太短。")
+            nonce = ciphertext[:self.iv_len]
+            encrypted_data = ciphertext[self.iv_len:-self.tag_len]  # 移除假 tag
 
-        if self.method == 'aes-256-cfb':
-            # 对于 AES-CFB 模式，IV 在初始化 Cipher 对象时提供
-            algorithm = algorithms.AES(self.key)
-            self._encryptor = Cipher(algorithm, modes.CFB(iv), backend=default_backend()).encryptor()
-            self._decryptor = Cipher(algorithm, modes.CFB(iv), backend=default_backend()).decryptor()
-        elif self.method == 'chacha20':
-            # 对于 ChaCha20，IV (在这里被称为 nonce) 在初始化算法时提供
-            algorithm = algorithms.ChaCha20(self.key, self._current_iv)
-            self._encryptor = Cipher(algorithm, mode=None, backend=default_backend()).encryptor()
-            self._decryptor = Cipher(algorithm, mode=None, backend=default_backend()).decryptor()
+            cipher = algorithms.ChaCha20(self.key, nonce)  # 修正: Cipher 构造函数需要 backend
+            decryptor = Cipher(cipher, mode=None, backend=default_backend()).decryptor()
+            plaintext = decryptor.update(encrypted_data) + decryptor.finalize()
+            return plaintext
         else:
-            raise ValueError(f"设置 IV 时不支持的加密方法：{self.method}")
-
-    def encrypt_stream(self, plaintext: bytes) -> bytes:
-        """
-        使用已初始化的流式加密器加密数据。
-        此方法适用于加密后续的数据流。
-        """
-        if self._encryptor is None:
-            raise RuntimeError("加密器未初始化。请先调用 set_iv()。")
-        ciphertext = self._encryptor.update(plaintext)
-        return ciphertext
-
-    def decrypt_stream(self, ciphertext: bytes) -> bytes:
-        """
-        使用已初始化的流式解密器解密数据。
-        此方法适用于解密后续的数据流。
-        """
-        if self._decryptor is None:
-            raise RuntimeError("解密器未初始化。请先调用 set_iv()。")
-        plaintext = self._decryptor.update(ciphertext)
-        return plaintext
-
-    # --- Shadowsocks 协议中，IV 只在每个连接开始时发送一次。 ---
-    def encrypt(self, plaintext: bytes) -> bytes:
-        """
-        加密初始数据块。生成一个随机 IV 并将其预置到密文前。
-        此方法应在每个连接开始时调用一次 (在客户端)。
-        """
-        iv = os.urandom(self.iv_len) # 生成随机 IV
-        self.set_iv(iv) # 使用此 IV 初始化加密器
-        ciphertext = self.encrypt_stream(plaintext) # 加密数据
-        return iv + ciphertext # 将 IV 和密文拼接后返回
-
-    def decrypt_initial(self, initial_encrypted_data_with_iv: bytes) -> bytes:
-        """
-        解密初始数据块。从数据开头提取 IV 并使用它。
-        此方法应在每个连接开始时调用一次 (在服务器端)。
-        """
-        if len(initial_encrypted_data_with_iv) < self.iv_len:
-            raise ValueError("初始加密数据太短，不包含 IV。")
-        iv = initial_encrypted_data_with_iv[:self.iv_len] # 提取 IV
-        encrypted_payload = initial_encrypted_data_with_iv[self.iv_len:] # 剩余部分是加密的实际载荷
-        self.set_iv(iv) # 使用此 IV 初始化解密器
-        plaintext = self.decrypt_stream(encrypted_payload) # 解密载荷
-        return plaintext
+            raise CryptoError("不支持该加密方法进行解密操作。")

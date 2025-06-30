@@ -1,0 +1,10 @@
+{
+  "server": "",
+  "server_port": 443,
+  "password": "YOUR_VERY_STRONG_AND_RANDOM_SS_PASSWORD_HERE",
+  "method": "aes-256-gcm",
+  "local_address": "127.0.0.1",
+  "local_port": 1080,
+  "plugin": "v2ray-plugin.exe",
+  "plugin_opts": "tls;host=ss.yourdomain.com;path=/ws/YOUR_RANDOM_PATH"
+}
